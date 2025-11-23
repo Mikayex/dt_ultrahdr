@@ -31,7 +31,7 @@ script_data.metadata = {
     purpose = _("UltraHDR exporter"),
     author = "Thomas Laroche <tho.laroche@gmail.com>"
 }
-script_data.destroy = nil -- function to destory the script
+script_data.destroy = nil -- function to destroy the script
 script_data.destroy_method = nil -- set to hide for libs since we can't destroy them commpletely yet
 script_data.restart = nil -- how to restart the (lib) script after it's been hidden - i.e. make it visible again
 script_data.show = nil -- only required for libs since the destroy_method only hides them
@@ -320,6 +320,12 @@ local function create_hdr_xmp(xmp, target_luminance)
     local error_occurred = false
     local hdr_xmp, replacements = xmp:gsub('<rdf:li[^>]*darktable:operation="sigmoid"[^>]*/>', function(sigmoid_xml)
         local version = tonumber(sigmoid_xml:match('darktable:modversion="(%d+)"'))
+        if not version then
+            dt.print_error("Failed to parse Sigmoid module version from XMP")
+            dt.print(_("ERROR - Failed to parse Sigmoid module version. XMP file may be corrupted."))
+            error_occurred = true
+            return sigmoid_xml
+        end
         local edited = sigmoid_xml:gsub('darktable:params="(%x+)"', function(encoded_params)
             local params = decode_sigmoid(version, encoded_params)
             if not params then
@@ -363,7 +369,7 @@ if not ultrahdr_app_path or ultrahdr_app_path == "" then
     end
 end
 
-local ultrahdr_app_path = df.check_if_bin_exists("ultrahdr_app")
+ultrahdr_app_path = df.check_if_bin_exists("ultrahdr_app")
 local magick_path = df.check_if_bin_exists("magick")
 local darktable_cli_path = df.check_if_bin_exists("darktable-cli")
 
@@ -387,8 +393,8 @@ local function initialize(storage, format, images, high_quality, extra_data)
         return {}
     end
     if not darktable_cli_path then
-        dt.print_error("darktable_cli_path not found")
-        dt.print(_("ERROR - darktable_cli_path not found"))
+        dt.print_error("darktable-cli not found")
+        dt.print(_("ERROR - darktable-cli not found"))
         return {}
     end
 
