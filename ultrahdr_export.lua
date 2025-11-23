@@ -323,6 +323,16 @@ local function create_hdr_xmp(xmp, target_luminance)
         return edited
     end)
 
+    if replacements == 0 then
+        dt.print_error("No Sigmoid module found in XMP")
+        dt.print(_("ERROR - No Sigmoid module found. Make sure Sigmoid is enabled in the pixelpipe."))
+        return nil
+    elseif replacements > 1 then
+        dt.print_error(string.format("Multiple Sigmoid module instances found: %d", replacements))
+        dt.print(_("ERROR - Multiple Sigmoid module instances detected. Only one instance is supported."))
+        return nil
+    end
+
     return hdr_xmp
 end
 
@@ -433,6 +443,10 @@ local function store(storage, image, format, filename, number, total, high_quali
 
     local tmp_prefix = os.tmpname()
     local hdr_xmp = create_hdr_xmp(xmp, target_luminance)
+    if not hdr_xmp then
+        os.remove(filename)
+        return
+    end
     local hdr_xmp_filename = tmp_prefix .. ".xmp"
     if not write_file(hdr_xmp_filename, hdr_xmp) then
         dt.print_error(string.format("Failed to write temporary XMP file: %s", hdr_xmp_filename))
