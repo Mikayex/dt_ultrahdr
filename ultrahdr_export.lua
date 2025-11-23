@@ -274,7 +274,9 @@ local function decode_sigmoid(version, encoded)
     elseif version == 3 then
         return decode_sigmoid_v3(data)
     else
-        -- TODO: Not supported!
+        dt.print_error(string.format("Unsupported Sigmoid module version: %d", version))
+        dt.print(_("ERROR - Unsupported Sigmoid module version. Only versions 1, 2, and 3 are supported."))
+        return nil
     end
 end
 
@@ -306,22 +308,38 @@ local function encode_sigmoid(version, params)
     elseif version == 3 then
         data = encode_sigmoid_v3(params)
     else
-        -- TODO: Not supported!
+        dt.print_error(string.format("Unsupported Sigmoid module version: %d", version))
+        dt.print(_("ERROR - Unsupported Sigmoid module version. Only versions 1, 2, and 3 are supported."))
+        return nil
     end
     return bin_to_hex(data)
 end
 
 local function create_hdr_xmp(xmp, target_luminance)
     -- Find and edit the sigmoid module
+    local error_occurred = false
     local hdr_xmp, replacements = xmp:gsub('<rdf:li[^>]*darktable:operation="sigmoid"[^>]*/>', function(sigmoid_xml)
         local version = tonumber(sigmoid_xml:match('darktable:modversion="(%d+)"'))
         local edited = sigmoid_xml:gsub('darktable:params="(%x+)"', function(encoded_params)
             local params = decode_sigmoid(version, encoded_params)
+            if not params then
+                error_occurred = true
+                return encoded_params
+            end
             params.display_white_target = target_luminance
-            return 'darktable:params="' .. encode_sigmoid(version, params) .. '"'
+            local encoded_result = encode_sigmoid(version, params)
+            if not encoded_result then
+                error_occurred = true
+                return encoded_params
+            end
+            return 'darktable:params="' .. encoded_result .. '"'
         end)
         return edited
     end)
+
+    if error_occurred then
+        return nil
+    end
 
     if replacements == 0 then
         dt.print_error("No Sigmoid module found in XMP")
