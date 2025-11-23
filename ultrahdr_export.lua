@@ -424,13 +424,22 @@ local function store(storage, image, format, filename, number, total, high_quali
     if target_luminance > 1600 then target_luminance = 1600 end
 
     local xmp = read_file(image.sidecar)
-    -- TODO: Handle non existing sidecar
+    if not xmp then
+        dt.print_error(string.format("Failed to read XMP sidecar: %s", image.sidecar))
+        dt.print(_("ERROR - Failed to read XMP sidecar file. Make sure the image has been processed in Darktable."))
+        os.remove(filename)
+        return
+    end
 
     local tmp_prefix = os.tmpname()
     local hdr_xmp = create_hdr_xmp(xmp, target_luminance)
     local hdr_xmp_filename = tmp_prefix .. ".xmp"
     if not write_file(hdr_xmp_filename, hdr_xmp) then
-        -- TODO: Handle errors
+        dt.print_error(string.format("Failed to write temporary XMP file: %s", hdr_xmp_filename))
+        dt.print(_("ERROR - Failed to write temporary XMP file. Check disk space and permissions."))
+        os.remove(hdr_xmp_filename)
+        os.remove(filename)
+        return
     end
 
     local hdr_exr_filename = tmp_prefix .. ".exr"
