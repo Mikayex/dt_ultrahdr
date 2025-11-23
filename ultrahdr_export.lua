@@ -379,7 +379,6 @@ local function support_format(storage, format)
 end
 
 local function initialize(storage, format, images, high_quality, extra_data)
-    dt.print("Initialize")
     save_preferences()
 
     if not ultrahdr_app_path then
