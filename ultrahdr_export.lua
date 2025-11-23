@@ -372,16 +372,27 @@ local function export_exr_image(original_filename, xmp_filename, output_filename
         '%s "%s" "%s" "%s" --apply-custom-presets false --icc-type LIN_REC2020 --core --conf plugins/imageio/format/exr/compression=0 --conf plugins/imageio/format/exr/pixel_type=float',
         darktable_cli_path, original_filename, xmp_filename, output_filename:gsub(PS, "/"))
 
-    dsys.external_command(dt_cli_command)
-    -- TODO: Check command result
+    local result = dsys.external_command(dt_cli_command)
+    if result ~= 0 then
+        dt.print_error(string.format("darktable-cli failed with exit code %d", result))
+        dt.print(_("ERROR - Failed to export HDR image using darktable-cli. Check console for details."))
+        return false
+    end
+    return true
 end
 
 local function convert_hdr_image(exr_filename, output_filename)
     local magick_command = string.format(
         '%s "%s" -alpha on -define quantum:format=floating-point -define quantum:precision=16 rgba:"%s"', magick_path,
         exr_filename, output_filename)
-    dsys.external_command(magick_command)
-    -- TODO: Check command result
+
+    local result = dsys.external_command(magick_command)
+    if result ~= 0 then
+        dt.print_error(string.format("ImageMagick convert failed with exit code %d", result))
+        dt.print(_("ERROR - Failed to convert EXR to raw buffer using ImageMagick. Check if file exists and ImageMagick is properly installed."))
+        return false
+    end
+    return true
 end
 
 local function create_ultrahdr_image(image, sdr_jpg_filename, hdr_raw_filename, output_jpg_filename, target_luminance)
@@ -390,8 +401,14 @@ local function create_ultrahdr_image(image, sdr_jpg_filename, hdr_raw_filename, 
         '%s -m 0 -i "%s" -p "%s" -a 4 -c 0 -C 2 -t 0 -L %d -Q %d -R 1 -M 1 -s %d -w %d -h %d -z "%s"',
         ultrahdr_app_path, sdr_jpg_filename, hdr_raw_filename, target_luminance, gainmap_quality_widget.value,
         downsampling_factor, image.final_width, image.final_height, output_jpg_filename)
-    dsys.external_command(ultrahdr_app_command)
-    -- TODO: Check command result
+
+    local result = dsys.external_command(ultrahdr_app_command)
+    if result ~= 0 then
+        dt.print_error(string.format("ultrahdr_app failed with exit code %d", result))
+        dt.print(_("ERROR - Failed to create UltraHDR image. Check if input files are valid and ultrahdr_app is working correctly."))
+        return false
+    end
+    return true
 end
 
 local function store(storage, image, format, filename, number, total, high_quality, extra_data)
@@ -417,16 +434,30 @@ local function store(storage, image, format, filename, number, total, high_quali
     end
 
     local hdr_exr_filename = tmp_prefix .. ".exr"
-    export_exr_image(image.path .. PS .. image.filename, hdr_xmp_filename, hdr_exr_filename)
+    if not export_exr_image(image.path .. PS .. image.filename, hdr_xmp_filename, hdr_exr_filename) then
+        os.remove(hdr_xmp_filename)
+        os.remove(hdr_exr_filename)
+        os.remove(filename)
+        return
+    end
     os.remove(hdr_xmp_filename) -- Not needed anymore
 
     local hdr_raw_filename = tmp_prefix .. ".raw"
-    convert_hdr_image(hdr_exr_filename, hdr_raw_filename)
+    if not convert_hdr_image(hdr_exr_filename, hdr_raw_filename) then
+        os.remove(hdr_exr_filename)
+        os.remove(hdr_raw_filename)
+        os.remove(filename)
+        return
+    end
     os.remove(hdr_exr_filename) -- Not needed anymore
 
-    create_ultrahdr_image(image, filename, hdr_raw_filename, output_file, target_luminance)
+    if not create_ultrahdr_image(image, filename, hdr_raw_filename, output_file, target_luminance) then
+        os.remove(hdr_raw_filename)
+        os.remove(filename)
+        return
+    end
 
-    -- Cleanup
+    -- Cleanup on success
     os.remove(hdr_raw_filename)
     os.remove(filename)
 end
