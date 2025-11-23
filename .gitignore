@@ -1,0 +1,15 @@
+# Lua temporary files
+*.luac
+luac.out
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
