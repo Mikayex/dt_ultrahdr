@@ -316,9 +316,27 @@ local function encode_sigmoid(version, params)
 end
 
 local function create_hdr_xmp(xmp, target_luminance)
-    -- Find and edit the sigmoid module
+    -- Parse history_end to know which history entries are active
+    local history_end = tonumber(xmp:match('darktable:history_end="(%d+)"'))
+    if not history_end then
+        dt.print_error("Failed to parse history_end from XMP")
+        dt.print(_("ERROR - Failed to parse history_end. XMP file may be corrupted."))
+        return nil
+    end
+
+    -- Track active sigmoid instances while modifying
+    local active_sigmoid_priorities = {}
     local error_occurred = false
-    local hdr_xmp, replacements = xmp:gsub('<rdf:li[^>]*darktable:operation="sigmoid"[^>]*/>', function(sigmoid_xml)
+
+    local hdr_xmp = xmp:gsub('<rdf:li[^>]*darktable:operation="sigmoid"[^>]*/>', function(sigmoid_xml)
+        -- Check if this sigmoid is in the active history
+        local num = tonumber(sigmoid_xml:match('darktable:num="(%d+)"'))
+        if num and num < history_end then
+            local multi_priority = tonumber(sigmoid_xml:match('darktable:multi_priority="(%d+)"')) or 0
+            active_sigmoid_priorities[multi_priority] = true
+        end
+
+        -- Modify the sigmoid parameters
         local version = tonumber(sigmoid_xml:match('darktable:modversion="(%d+)"'))
         if not version then
             dt.print_error("Failed to parse Sigmoid module version from XMP")
@@ -326,6 +344,7 @@ local function create_hdr_xmp(xmp, target_luminance)
             error_occurred = true
             return sigmoid_xml
         end
+
         local edited = sigmoid_xml:gsub('darktable:params="(%x+)"', function(encoded_params)
             local params = decode_sigmoid(version, encoded_params)
             if not params then
@@ -347,12 +366,18 @@ local function create_hdr_xmp(xmp, target_luminance)
         return nil
     end
 
-    if replacements == 0 then
-        dt.print_error("No Sigmoid module found in XMP")
+    -- Check if there are multiple sigmoid instances in the active pixelpipe
+    local instance_count = 0
+    for _ in pairs(active_sigmoid_priorities) do
+        instance_count = instance_count + 1
+    end
+
+    if instance_count == 0 then
+        dt.print_error("No Sigmoid module found in active history")
         dt.print(_("ERROR - No Sigmoid module found. Make sure Sigmoid is enabled in the pixelpipe."))
         return nil
-    elseif replacements > 1 then
-        dt.print_error(string.format("Multiple Sigmoid module instances found: %d", replacements))
+    elseif instance_count > 1 then
+        dt.print_error(string.format("Multiple Sigmoid module instances found in pixelpipe: %d", instance_count))
         dt.print(_("ERROR - Multiple Sigmoid module instances detected. Only one instance is supported."))
         return nil
     end
