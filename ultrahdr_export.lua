@@ -400,10 +400,10 @@ local function initialize(storage, format, images, high_quality, extra_data)
     return nil
 end
 
-local function export_exr_image(original_filename, xmp_filename, output_filename)
+local function export_exr_image(original_filename, xmp_filename, output_filename, width, height)
     local dt_cli_command = string.format(
-        '%s "%s" "%s" "%s" --apply-custom-presets false --icc-type LIN_REC2020 --core --conf plugins/imageio/format/exr/compression=0 --conf plugins/imageio/format/exr/pixel_type=float',
-        darktable_cli_path, original_filename, xmp_filename, output_filename:gsub(PS, "/"))
+        '%s "%s" "%s" "%s" --width %d --height %d --apply-custom-presets false --icc-type LIN_REC2020 --core --conf plugins/imageio/format/exr/compression=0 --conf plugins/imageio/format/exr/pixel_type=float',
+        darktable_cli_path, original_filename, xmp_filename, output_filename:gsub(PS, "/"), width, height)
 
     local result = dsys.external_command(dt_cli_command)
     if result ~= 0 then
@@ -428,12 +428,33 @@ local function convert_hdr_image(exr_filename, output_filename)
     return true
 end
 
-local function create_ultrahdr_image(image, sdr_jpg_filename, hdr_raw_filename, output_jpg_filename, target_luminance)
+local function get_image_dimensions(filename)
+    local identify_command = string.format('%s identify -format "%%w %%h" "%s"', magick_path, filename)
+    local identify_handle = io.popen(identify_command)
+    if not identify_handle then
+        dt.print_error("Failed to run ImageMagick identify")
+        return nil, nil
+    end
+
+    local identify_output = identify_handle:read("*a")
+    identify_handle:close()
+
+    local width, height = identify_output:match("(%d+)%s+(%d+)")
+
+    if not width or not height then
+        dt.print_error(string.format("Failed to get dimensions from: %s", filename))
+        return nil, nil
+    end
+
+    return tonumber(width), tonumber(height)
+end
+
+local function create_ultrahdr_image(sdr_jpg_filename, hdr_raw_filename, output_jpg_filename, target_luminance, width, height)
     local downsampling_factor = round_to_power_of_2(gainmap_downsampling_widget.value)
     local ultrahdr_app_command = string.format(
         '%s -m 0 -i "%s" -p "%s" -a 4 -c 0 -C 2 -t 0 -L %d -Q %d -R 1 -M 1 -s %d -w %d -h %d -z "%s"',
         ultrahdr_app_path, sdr_jpg_filename, hdr_raw_filename, target_luminance, gainmap_quality_widget.value,
-        downsampling_factor, image.final_width, image.final_height, output_jpg_filename)
+        downsampling_factor, width, height, output_jpg_filename)
 
     local result = dsys.external_command(ultrahdr_app_command)
     if result ~= 0 then
@@ -479,8 +500,17 @@ local function store(storage, image, format, filename, number, total, high_quali
         return
     end
 
+    -- Get dimensions from the exported SDR JPEG
+    local width, height = get_image_dimensions(filename)
+    if not width or not height then
+        dt.print(_("ERROR - Failed to determine image dimensions."))
+        os.remove(hdr_xmp_filename)
+        os.remove(filename)
+        return
+    end
+
     local hdr_exr_filename = tmp_prefix .. ".exr"
-    if not export_exr_image(image.path .. PS .. image.filename, hdr_xmp_filename, hdr_exr_filename) then
+    if not export_exr_image(image.path .. PS .. image.filename, hdr_xmp_filename, hdr_exr_filename, width, height) then
         os.remove(hdr_xmp_filename)
         os.remove(hdr_exr_filename)
         os.remove(filename)
@@ -497,7 +527,7 @@ local function store(storage, image, format, filename, number, total, high_quali
     end
     os.remove(hdr_exr_filename) -- Not needed anymore
 
-    if not create_ultrahdr_image(image, filename, hdr_raw_filename, output_file, target_luminance) then
+    if not create_ultrahdr_image(filename, hdr_raw_filename, output_file, target_luminance, width, height) then
         os.remove(hdr_raw_filename)
         os.remove(filename)
         return
