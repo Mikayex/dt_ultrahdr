@@ -60,7 +60,7 @@ The plugin integrates directly into Darktable's export dialog as a custom storag
 
 ## Enable
 
-Add a line to the luarc `require "dt_ultrahdr/ultrahdr_export.lua"`.
+Add a line to the luarc `require "dt_ultrahdr/ultrahdr_export"`.
 
 If you are using script_manager to manage your scripts, then you will see a new category, dt_ultrahdr.  Select that and enable/disable the script.
 
